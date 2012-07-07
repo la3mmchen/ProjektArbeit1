@@ -105,7 +105,6 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			}
 		}
 	}
-	  
 	public static class KookkurrenzMitPairsReduce extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
 		public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
 			int sum = 0;
@@ -129,46 +128,58 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 		private int window = 2;
 		
 		public void map(LongWritable key, Text line, OutputCollector<Text, MapWritable> output, Reporter reporter) throws IOException {
+			/* 
+			 * Notwendiges Format für Stripes-Algorithmus
+			 * term -> %hm{"Wort1"->1; "Wort2"->4, ...} */
+			
 			String text = line.toString();
-			HashMap<String, Integer> hm = new HashMap<String, Integer>(); 
-
+			
+			// HashMap als Hilfe zum Aufsummieren d. Werte d. Kookkurrenzmatrix
+			HashMap<Text, IntWritable> hm = new HashMap<Text, IntWritable>();
+			
 			String[] terms = text.split("\\s+");
-			//java.util.Arrays.sort(terms);
-
 
 			for (int i = 0; i < terms.length-1; i++) { // Iteration über jeden gefundenen Term
-				String term = terms[i];
+				Text term = new Text(terms[i]);  // Format term: Text 
+				//term.set(terms[i]);				
 				
-				if (term.length() == 0) 
+				if (term.getLength() == 0) 
 					continue;
-					
-				hm.clear(); // Hashmap löschen
-										
-				for (int j = i+1; j < terms.length; j++) {	// Iteration über jeden weiteren gefundenen Term
-					String term2 = terms[j];
-										
-					if (hm.containsKey(term2)) { 
-							int x = hm.get(term2) + 1;
-							hm.put(term2, x);
+															
+				for (int j = 1; j < terms.length; j++) {	// Iteration über jeden weiteren gefundenen Term
+					Text term2 = new Text(terms[j]);
+															
+					if (hm.containsKey(term2)) { // Prüfen: ist term2 bereits in %hm
+							IntWritable x = hm.get(term2);
+							hm.put(term2, new IntWritable(hm.get(term2).get() + 1));
 					}
 					else {
-							hm.put(term2, 1);
+							hm.put(term2, one);
 					}
 				}
-				/* 
-				 * TODO: Übergabeformat d. Hash Map -> Reduce */
-				output.collect(key, hm);
+				
+				// Hilfs-HashMap in MapWritable verpacken
+				MapWritable stripe = new MapWritable();
+				MapWritable WritableHm = new MapWritable();
+				WritableHm.putAll(hm);
+				//stripe.putAll(hm);
+				stripe.put(term, WritableHm); // schreibe term-> %hm in MapWritable
+				// Schreibe der Zeile d. Kookkurrenzmatrix in OutputCollector
+				output.collect(term,stripe);
 			}
 		}
-	}
-	  
-	public static class KookkurrenzMitStripesReduce extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
-		public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+	}	  
+	public static class KookkurrenzMitStripesReduce extends MapReduceBase implements Reducer<Text, MapWritable, Text, Text> {
+		public void reduce(Text key, Iterator<MapWritable> values, OutputCollector<Text, Text> output, Reporter reporter) throws IOException {
 			int sum = 0;
+			// MapWritable in HashMap auspacken
+			HashMap<Text, IntWritable> hm = new HashMap<Text, IntWritable>();
+			/*
 			while (values.hasNext()) {
 				sum += values.next().get();
 			}
-			output.collect(key, new IntWritable(sum));
+			*/
+			output.collect(key, new Text("lala"));
 		}
 	}
 	/*</Task3> */
