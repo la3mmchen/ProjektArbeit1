@@ -1,4 +1,17 @@
 package org.myorg;
+/*
+ * 
+ * 
+ * 
+ * TODO:
+ * - Umgang mit Subdirectories; rekursives lesen v. Pfaden
+ * - Transformation: s/\n/s/g (ersetze Zeilenumbrüche durch Leerzeichen)
+ * 
+ * 
+ */
+
+
+
 
 import java.io.IOException;
 import java.util.*;
@@ -14,10 +27,7 @@ import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.util.*;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
-
-
 import org.apache.hadoop.conf.Configured;
-//import org.apache.log4j.Logger;
 
 
 public class ProjektArbeitKoehler extends Configured implements Tool {
@@ -116,8 +126,6 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	}
 	/*</Task2> */
 
-
-
 	 /*
 	  * <Task3>
 	  * Kookkurrenz mit Stripes
@@ -139,30 +147,32 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			
 			String[] terms = text.split("\\s+");
 
-			for (int i = 0; i < terms.length-1; i++) { // Iteration über jeden gefundenen Term
+			for (int i = 0; i < terms.length; i++) { // Iteration über jeden gefundenen Term
 				Text term = new Text(terms[i]);  // Format term: Text 
-				//term.set(terms[i]);				
 				
 				if (term.getLength() == 0) 
 					continue;
 															
-				for (int j = 1; j < terms.length; j++) {	// Iteration über jeden weiteren gefundenen Term
+				for (int j = 0; j < terms.length; j++) {	// innere, geschachtelte Schleife über alle Terme
 					Text term2 = new Text(terms[j]);
-															
+									
+					if (i == j)  // Skip wenn Iteration an der selben Stelle steht, damit ein Termvorkommen nur einmal gezählt wird
+						continue;
+						
 					if (hm.containsKey(term2)) { // Prüfen: ist term2 bereits in %hm
 							IntWritable x = hm.get(term2);
-							hm.put(term2, new IntWritable(hm.get(term2).get() + 1));
+							hm.put(term2, new IntWritable(hm.get(term2).get() + 1)); // erhöhen d. Counters
 					}
-					else {
+					else { 
 							hm.put(term2, one);
 					}
 				}
 				
 				// Hilfs-HashMap in MapWritable verpacken
-				MapWritable stripe = new MapWritable();
-				MapWritable WritableHm = new MapWritable();
+				MapWritable stripe = new MapWritable(); // stripe: MapWritable zur Datenübergabe Map->Reduce
+				MapWritable WritableHm = new MapWritable(); // WritableHm: Hilfs-MapWritable zur Umwandlung v. HashMap hm in MapWritable
 				WritableHm.putAll(hm);
-				//stripe.putAll(hm);
+				hm.clear(); // Leeren der Hilfs-HashMap
 				stripe.put(term, WritableHm); // schreibe term-> %hm in MapWritable
 				// Schreibe der Zeile d. Kookkurrenzmatrix in OutputCollector
 				output.collect(term,stripe);
@@ -172,16 +182,37 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	public static class KookkurrenzMitStripesReduce extends MapReduceBase implements Reducer<Text, MapWritable, Text, Text> {
 		public void reduce(Text key, Iterator<MapWritable> values, OutputCollector<Text, Text> output, Reporter reporter) throws IOException {
 			int sum = 0;
-			// MapWritable in HashMap auspacken
-			HashMap<Text, IntWritable> hm = new HashMap<Text, IntWritable>();
-			/*
-			while (values.hasNext()) {
-				sum += values.next().get();
+			// HashMap zum zählen erstellen
+			HashMap<Text, Integer> hm = new HashMap<Text, Integer>();
+		
+			while (values.hasNext()) { // Iteration über Key->Value Input d. Reducer's
+					MapWritable outterMapWritable = values.next();
+					
+					for ( Writable outerElemet : outterMapWritable.keySet() ) {  // Iteration durch äußeres MapWritable Objekt
+						MapWritable innerMapWritable = (MapWritable) outterMapWritable.get(outerElemet);
+						
+						for ( Writable innerElement : innerMapWritable.keySet() ) {  // Iteration durch inneres MapWritable Objekt
+								Text value = new Text();
+								value.set(""+innerElement);
+								if (hm.containsKey(value)) { // Prüfen: ist Value bereits in %hm
+										hm.put(value, hm.get(value)+ 1);
+								}
+								else {
+										hm.put(value, 1);
+								}
+								// TODO: delete me after Beschreibung Reducer 
+								//tmpText.set(tmpText + "; "+innerElement+"->"+ innerMapWritable.get(innerElement));
+								//ergibt: 
+								// 		ipsum	; dolor->1; lorem->1; amet->1; lorem->1
+								// 		lorem	; amet->1; ipsum->1; dolor->1; ipsum->1
+						}
+					}
 			}
-			*/
-			output.collect(key, new Text("lala"));
+			output.collect(key, new Text(hm.toString()));
+			//output.collect(key, new Text("lala"));
+			
 		}
-	}
+	}	
 	/*</Task3> */
 
 	/*
@@ -195,12 +226,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			printUsage();
 			return 1;
 		}
-		if (args.length != 3) {
-		  System.err.println("Usage:  <String:Anwedungsfall> <String:Input> <String:Output>");
-		  ToolRunner.printGenericCommandUsage(System.err);
-		  return 1;
-		}
-		
+		/* Werte aus args aufbereiten */		
 		String useCase = args[0];
 		String inputPath = args[1];
 		String outputPath = args[2];
@@ -214,6 +240,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 		FileInputFormat.setInputPaths(conf, new Path(inputPath));
 
 		/* Konfiguration für die einzelnen Anwendungsfälle */
+		/* conf: Task1 */
 		if (useCase.equals("wc")) {
 			System.out.println("wc: WordCount");	
 			conf.setJobName("WordCount");
@@ -228,12 +255,13 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setCombinerClass(WordCountReduce.class);
 			conf.setReducerClass(WordCountReduce.class);
 		}
+		/* conf: Task2 */
 		else if (useCase.equals("cc_p")) {
 			System.out.println("cc_p Berechnung v. Kookkurrenz mit Pairs-Algorithmus");	
 			conf.setJobName("Kookkurrenz");
 			/* Output: Key:Text -> Value:Integer */
 			conf.setOutputKeyClass(Text.class);
-			conf.setOutputValueClass(IntWritable.class);
+			conf.setOutputValueClass(Text.class);
 			conf.setOutputFormat(TextOutputFormat.class);
 			/* Input: Key.Text -> Value:Text */
 			conf.setInputFormat(TextInputFormat.class);
@@ -243,21 +271,26 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setReducerClass(KookkurrenzMitPairsReduce.class);
 			//conf.setInputFormat(NonSplittableTextInputFormat.class);
 		}
+		/* conf: Task3 */
 		else if (useCase.equals("cc_s")) {
 			System.out.println("cc_p Berechnung v. Kookkurrenz mit Stripes-Algorithmus");	
 			conf.setJobName("Kookkurrenz");
-			/* Output: Key:Text -> Value:Integer */
+			/* Output: Key:Text -> Value:Text */
 			conf.setOutputKeyClass(Text.class);
-			conf.setOutputValueClass(IntWritable.class);
+			conf.setOutputValueClass(Text.class);
 			conf.setOutputFormat(TextOutputFormat.class);
 			/* Input: Key.Text -> Value:Text */
 			conf.setInputFormat(TextInputFormat.class);
+			/* Map-Output: Text -> MapWritable */
+			conf.setMapOutputKeyClass(Text.class);
+			conf.setMapOutputValueClass(MapWritable.class);
 			/* Definition der entsprechenden Mapper/Reducer-Klassen */
 			conf.setMapperClass(KookkurrenzMitStripesMap.class);
-			conf.setCombinerClass(KookkurrenzMitStripesReduce.class);
+			/* TODO: Erklären, wieso Stripes ohne Combiner funktioniert */
 			conf.setReducerClass(KookkurrenzMitStripesReduce.class);
 			//conf.setInputFormat(NonSplittableTextInputFormat.class);
 		}
+		/* default-option: Exit */
 		else {
 			printUsage();
 			return 1;
