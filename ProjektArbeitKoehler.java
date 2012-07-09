@@ -46,10 +46,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	 
 	/* 
 	 * <Task1>: 
-	 * WordCount
-	 * - simple word count taken from http://hadoop.apache.org/common/docs/r1.0.2/mapred_tutorial.html
-	 *
-	 * @version: 1
+	 * zeilenbasierter WordCount
 	 * */
 	public static class WordCountMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
 	 private final static IntWritable one = new IntWritable(1);
@@ -81,7 +78,6 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	public static class KookkurrenzMitPairsMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
 		private final Text pair = new Text();
 		private final IntWritable one = new IntWritable(1);
-		private int window = 2;
 		public void map(LongWritable key, Text line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
 			String text = line.toString();
 
@@ -215,6 +211,56 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	}	
 	/*</Task3> */
 
+	/* <Task4>
+	 * Korrelationsanalyse mit Hilfe v. Pairs-Kookkurrenz-Algorithmus
+	 * 
+	 * TODO:
+	 * - Aktuelle Zeile bestimmen -> notwendig zur Bestimmung d. Dateinamens
+	 * - Datei entsprechend fileName öffnen und Tags auslesen
+	 * - jeden Tag / File noch zu nGram dazu mappen
+	 */
+	public static class KorrelationsAnalysePairsMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
+		private final Text pair = new Text();
+		private final IntWritable one = new IntWritable(1);
+		private int nGram = 3; // Definition v. n; Optimierung: Könnte über Kommandozeilenargumente abgefragt werden
+		public void map(LongWritable key, Text line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+			// für Zugriff auf Tags/Exif Daten ist der Dateiname notwendig
+			FileSplit fileSplit = (FileSplit)reporter.getInputSplit();
+			String fileName = fileSplit.getPath().getName();			
+			
+			// Verarbeiten einer Zeile
+			String text = line.toString();
+			String[] terms = text.split("\\s+");
+			
+			for (int i = 0; i < terms.length-1; i++) { // Iteration über jeden gefundenen Term
+				String current = terms[i];
+				current = quantify(current);
+				
+				if ((i + nGram) > terms.length) // Abbrechen, wenn aufgrund der nGram Größe keine weitere nGrams mehr gebildet werden können
+					break;
+				
+				for (int x = 1; x < nGram; x++) {
+					current = current + " " + quantify(terms[i+x]);
+				}
+				
+				output.collect(new Text(key+"->"+fileName+";"+current), one); // add n-Gramm
+			}
+		}	
+		private static String quantify(String str) {
+			return Double.toString(Math.rint( Double.parseDouble(str) * 100 ) / 100 );
+		}
+	}
+	public static class KorrelationsAnalysePairsReduce extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
+		public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+			int sum = 0;
+			while (values.hasNext()) {
+				sum += values.next().get();
+			}
+			output.collect(key, new IntWritable(sum));
+		}
+	}
+	/*</Task4> */ 
+
 	/*
 	 * <run>
 	 * 
@@ -290,6 +336,21 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setReducerClass(KookkurrenzMitStripesReduce.class);
 			//conf.setInputFormat(NonSplittableTextInputFormat.class);
 		}
+		/* conf: Taks 4*/
+		else if (useCase.equals("cor_p")) {
+			System.out.println("cor_p Korrelationsanalyse auf Basis des Pairs-Algorithmus");	
+			conf.setJobName("Korrelationsanalyse");
+			/* Output: Key:Text -> Value:Integer */
+			conf.setOutputKeyClass(Text.class);
+			conf.setOutputValueClass(IntWritable.class);
+			conf.setOutputFormat(TextOutputFormat.class);
+			/* Input: Key.Text -> Value:Text */
+			conf.setInputFormat(TextInputFormat.class);
+			/* Definition der entsprechenden Mapper/Reducer-Klassen */
+			conf.setMapperClass(KorrelationsAnalysePairsMap.class);
+			conf.setCombinerClass(KorrelationsAnalysePairsReduce.class);
+			conf.setReducerClass(KorrelationsAnalysePairsReduce.class);
+		}
 		/* default-option: Exit */
 		else {
 			printUsage();
@@ -320,6 +381,8 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 		System.out.println("     wc: WordCount");
 		System.out.println("     cc_p: Kookkurrenz mit Pairs-Algorithmus");
 		System.out.println("     cc_s: Kookkurrenz mit Stripes-Algorithmus");
+		System.out.println("     cor_p: Korrelationsanalye mit dem Pairs-Algorithmus");
+		System.out.println("     cor_s: Korrelationsanalye mit dem Stripes-Algorithmus");
 		return;
 	}
 	
