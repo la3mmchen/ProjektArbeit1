@@ -15,6 +15,10 @@ package org.myorg;
 
 import java.io.IOException;
 import java.util.*;
+import java.io.*;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+
 
 
 import org.apache.hadoop.fs.*;
@@ -86,7 +90,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 
 			for (int i = 0; i < terms.length-1; i++) { // Iteration über jeden gefundenen Term
 				String term = terms[i];
-				for (int j = i+1; j < terms.length; j++) {	//
+				for (int j = i+1; j < terms.length; j++) {	
 					String term2 = terms[j];
 					boolean found = true;
 					
@@ -222,28 +226,78 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	public static class KorrelationsAnalysePairsMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
 		private final Text pair = new Text();
 		private final IntWritable one = new IntWritable(1);
+		private final String htPath = "input_task4/ht_descriptors/"; // TODO: wie bekommt man den pfad?
 		private int nGram = 3; // Definition v. n; Optimierung: Könnte über Kommandozeilenargumente abgefragt werden
 		public void map(LongWritable key, Text line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
-			// für Zugriff auf Tags/Exif Daten ist der Dateiname notwendig
+			// für Zugriff den Feature-Vektor ist der Datei-Name der gerade durch den Mapper verarbeiteten Datei notwendig
 			FileSplit fileSplit = (FileSplit)reporter.getInputSplit();
-			String fileName = fileSplit.getPath().getName();			
+			String filePathParent = fileSplit.getPath().getParent().toString();	
+			String fileName = fileSplit.getPath().getName();	
+
+			// auf Basis des Pfads der gerade verarbeiteten Datei die zugehörige Feature-Vektor Datei bestimmen
+			String[] pathComponents = filePathParent.split("/");
+			int pathInt = Integer.parseInt(pathComponents[pathComponents.length-1]);
+			String htFile = "eh"+String.valueOf(pathInt)+".txt";
 			
-			// Verarbeiten einer Zeile
-			String text = line.toString();
-			String[] terms = text.split("\\s+");
+			// Zeilennummer aus Dateinamen extrahieren
+			Pattern p = Pattern.compile("tags("+String.valueOf(pathInt-1)+")(\\d+)\\.txt");
+			Matcher m = p.matcher(fileName);
+			int neededLineNumber = 0;
+			if (m.find()) {
+				neededLineNumber = Integer.parseInt(m.group(2));
+			}
 			
-			for (int i = 0; i < terms.length-1; i++) { // Iteration über jeden gefundenen Term
-				String current = terms[i];
-				current = quantify(current);
-				
-				if ((i + nGram) > terms.length) // Abbrechen, wenn aufgrund der nGram Größe keine weitere nGrams mehr gebildet werden können
-					break;
-				
-				for (int x = 1; x < nGram; x++) {
-					current = current + " " + quantify(terms[i+x]);
+			// Zugriff auf Datei mit Feature-Verktor mit dem Feature-Vektor
+			FileSystem fs = FileSystem.get(new Configuration());
+			FileStatus[] status = fs.listStatus(new Path(htPath+htFile));
+			String featureVektor = new String("");
+	
+			if (neededLineNumber != 0 ) { // Map nur fortsetzen, wenn eine Zeilennummer aus dem Dateinamen ermittelt werden konnte
+				try {
+						BufferedReader br=new BufferedReader(new InputStreamReader(fs.open(status[0].getPath())));
+						featureVektor=br.readLine();
+						
+						for(int o=1; o<neededLineNumber-1; o++) { // Datei bis neededLineNumber - 1 lesen um LineCounter an die korrekte Stelle zu setzen
+							featureVektor=br.readLine();					
+						}
+						featureVektor=br.readLine(); // featureVektor enthält nun den Feature-Vektor zur eingelesenen Datei
 				}
-				
-				output.collect(new Text(key+"->"+fileName+";"+current), one); // add n-Gramm
+				catch(Exception e){
+							System.out.println("File not found");
+					}
+					
+				if (!featureVektor.equals("")) { // nur fortfahren, wenn anhand d. Zeilennummer ein Feature-Vektor gefunden werden konnte
+		
+					// Verarbeiten des Feature-Vektor					
+					String[] features = featureVektor.split("\\s+");
+					List<String> nGramms = new ArrayList<String>();
+
+					for (int i = 0; i < features.length-1; i++) { // Iteration über jedes gefundene Feature
+						String current = features[i];
+						current = quantify(current);
+						
+						if ((i + nGram) > features.length) // Abbrechen, wenn aufgrund der nGram Größe keine weitere nGrams mehr gebildet werden können
+							break;
+						
+						for (int x = 1; x < nGram; x++) {
+							current = current + " " + quantify(features[i+x]);
+						}
+						nGramms.add(current);
+					}
+					
+					// Verarbeitung der Tags sowie Kombination mit ermittelten nGramms
+					String lineIn = line.toString();
+					String[] tags = lineIn.split("\\s+");
+										
+					for (int i = 0; i < tags.length-1; i++) { // Iteration über jedes gefundene Feature
+						String tag = tags[i];
+						Iterator itr = nGramms.iterator();
+						
+						while(itr.hasNext()) {
+								output.collect(new Text(itr.next()+" -> "+tag), one); // add n-Gramm plus tag zu Output
+						}
+					}
+				}
 			}
 		}	
 		private static String quantify(String str) {
