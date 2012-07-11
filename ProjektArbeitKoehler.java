@@ -4,22 +4,15 @@ package org.myorg;
  * 
  * 
  * TODO:
- * - Umgang mit Subdirectories; rekursives lesen v. Pfaden
+ * - Umgang mit Subdirectories; rekursives lesen v. Pfaden --> gelöst: * in Pfad einbauen
  * - Transformation: s/\n/s/g (ersetze Zeilenumbrüche durch Leerzeichen)
  * 
- * 
  */
-
-
-
-
 import java.io.IOException;
 import java.util.*;
 import java.io.*;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
-
-
 
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.fs.FileSystem;
@@ -217,11 +210,6 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 
 	/* <Task4>
 	 * Korrelationsanalyse mit Hilfe v. Pairs-Kookkurrenz-Algorithmus
-	 * 
-	 * TODO:
-	 * - Aktuelle Zeile bestimmen -> notwendig zur Bestimmung d. Dateinamens
-	 * - Datei entsprechend fileName öffnen und Tags auslesen
-	 * - jeden Tag / File noch zu nGram dazu mappen
 	 */
 	public static class KorrelationsAnalysePairsMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
 		private final Text pair = new Text();
@@ -237,10 +225,13 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			// auf Basis des Pfads der gerade verarbeiteten Datei die zugehörige Feature-Vektor Datei bestimmen
 			String[] pathComponents = filePathParent.split("/");
 			int pathInt = Integer.parseInt(pathComponents[pathComponents.length-1]);
-			String htFile = "eh"+String.valueOf(pathInt)+".txt";
+			String ehFile = "eh"+String.valueOf(pathInt)+".txt";
 			
 			// Zeilennummer aus Dateinamen extrahieren
-			Pattern p = Pattern.compile("tags("+String.valueOf(pathInt-1)+")(\\d+)\\.txt");
+			// Pattern für Exif-Dateien
+			//Pattern p = Pattern.compile("tags("+String.valueOf(pathInt-1)+")(\\d+)\\.txt");
+			//Pattern für Tags
+			Pattern p = Pattern.compile("(tags)(\\d+)\\.txt");
 			Matcher m = p.matcher(fileName);
 			int neededLineNumber = 0;
 			if (m.find()) {
@@ -249,7 +240,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			
 			// Zugriff auf Datei mit Feature-Verktor mit dem Feature-Vektor
 			FileSystem fs = FileSystem.get(new Configuration());
-			FileStatus[] status = fs.listStatus(new Path(htPath+htFile));
+			FileStatus[] status = fs.listStatus(new Path(htPath+ehFile));
 			String featureVektor = new String("");
 	
 			if (neededLineNumber != 0 ) { // Map nur fortsetzen, wenn eine Zeilennummer aus dem Dateinamen ermittelt werden konnte
@@ -404,6 +395,8 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setMapperClass(KorrelationsAnalysePairsMap.class);
 			conf.setCombinerClass(KorrelationsAnalysePairsReduce.class);
 			conf.setReducerClass(KorrelationsAnalysePairsReduce.class);
+			// Überschreiben des InputPaths um auch alle Subdirectories zu berücksichtigen
+			FileInputFormat.setInputPaths(conf, new Path(inputPath+"tags/*")); // setInputPaths = tags/*
 		}
 		/* default-option: Exit */
 		else {
