@@ -1,11 +1,5 @@
 package org.myorg;
-/*
- * 
- * TODO:
- * - Umgang mit Subdirectories; rekursives lesen v. Pfaden --> gelöst: * in Pfad einbauen
- * - Transformation: s/\n/s/g (ersetze Zeilenumbrüche durch Leerzeichen)
- * 
- */
+
 import java.io.IOException;
 import java.util.*;
 import java.io.*;
@@ -13,23 +7,15 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
 import org.apache.hadoop.fs.*;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.conf.*;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.*;
+import org.apache.hadoop.conf.*;
 import org.apache.hadoop.mapred.*;
-import org.apache.hadoop.mapred.TextInputFormat;
-import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.util.*;
-import org.apache.hadoop.util.Tool;
-import org.apache.hadoop.util.ToolRunner;
-import org.apache.hadoop.conf.Configured;
 
 
 public class ProjektArbeitKoehler extends Configured implements Tool {
-	 /*
-	  *  <generics>
+	 /* <generics>
+	  * Diese Implementierung ist übernommen aus dem Buch: "Hadoop: The Definitive Guide" -> Siehe Literaturverzeichnis am Ende der Projektarbeit
 	  */
 	public static class WholeFileInputFormat extends FileInputFormat<NullWritable, BytesWritable> {
 
@@ -99,12 +85,11 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			// do nothing
 		}
 	}
-	  /* </generics>
+	  /* </generics> */
 	 
 	 
-	/* 
-	 * <Task1>: 
-	 * zeilenbasierter WordCount
+	/* <Task1>: 
+	 *  WordCount (wc)
 	 * */
 	public static class WordCountMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
 	 private final static IntWritable one = new IntWritable(1);
@@ -129,8 +114,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	}
 	/* </Task1> */
 	 
-	 /*
-	  * <Task2>
+	 /* <Task2>
 	  * Kookkurrenz mit Pairs (cc_p)
 	  */
 	public static class KookkurrenzMitPairsMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, IntWritable> {
@@ -190,9 +174,8 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	}
 	/*</Task2> */
 
-	 /*
-	  * <Task3>
-	  * Kookkurrenz mit Stripes
+	 /* <Task3>
+	  * Kookkurrenz mit Stripes (cc_s)
 	  */
 	public static class KookkurrenzMitStripesMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, MapWritable> {
 		private final Text key = new Text();
@@ -280,7 +263,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	/*</Task3> */
 
 	/* <Task4>
-	 * Korrelationsanalyse mit Hilfe v. Pairs-Kookkurrenz-Algorithmus
+	 * Korrelationsanalyse mit Hilfe v. Pairs-Kookkurrenz-Algorithmus (cor_p)
 	 * 
 	 * Notwendiges Formate der Verzeichnisse
 	 * Startverzeichnis
@@ -387,32 +370,31 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	}
 	/*</Task4> */ 
 
-	/*
-	 * <run>
+	/* <run>
 	 * 
 	 * @param args Kommandozeilenparameter; Syntax: (String)Anwendungsfalls (String)Input-Dir (String)Output-Dir
 	 **/
 	public int run(String[] args) throws Exception {
-		/* Prüfen ob geforderte Mindestanzahl an Parametern übergeben wurde */
+		//Prüfen ob geforderte Mindestanzahl an Parametern übergeben wurde
 		if (args.length != 3) {
 			printUsage();
 			return 1;
 		}
-		/* Werte aus args aufbereiten */		
+		// Werte aus args aufbereiten
 		String useCase = args[0];
 		String inputPath = args[1];
 		String outputPath = args[2];
 	
-		/* Löschen eines vorhandenen "outputPath" Verzeichnis */
+		// Löschen eines vorhandenen "outputPath" Verzeichnis
 		deleteOldOutput(outputPath);		
 		
-		/* globale Konfiguration */
+		// globale Konfiguration
 		JobConf conf = new JobConf(ProjektArbeitKoehler.class);
 		FileOutputFormat.setOutputPath(conf, new Path(outputPath));      
 		FileInputFormat.setInputPaths(conf, new Path(inputPath));
 
-		/* Konfiguration für die einzelnen Anwendungsfälle */
-		/* conf: Task1 */
+		// Konfiguration für die einzelnen Anwendungsfälle 
+		// conf: Task1 
 		if (useCase.equals("wc")) {
 			System.out.println("wc: WordCount");	
 			conf.setJobName("WordCount");
@@ -427,7 +409,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setCombinerClass(WordCountReduce.class);
 			conf.setReducerClass(WordCountReduce.class);
 		}
-		/* conf: Task2 */
+		// conf: Task2
 		else if (useCase.equals("cc_p")) {
 			System.out.println("cc_p Berechnung v. Kookkurrenz mit Pairs-Algorithmus");	
 			conf.setJobName("Kookkurrenz");
@@ -445,7 +427,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setReducerClass(KookkurrenzMitPairsReduce.class);
 			
 		}
-		/* conf: Task3 */
+		// conf: Task3
 		else if (useCase.equals("cc_s")) {
 			System.out.println("cc_p Berechnung v. Kookkurrenz mit Stripes-Algorithmus");	
 			conf.setJobName("Kookkurrenz");
@@ -463,7 +445,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setReducerClass(KookkurrenzMitStripesReduce.class);
 			//conf.setInputFormat(NonSplittableTextInputFormat.class);
 		}
-		/* conf: Taks 4*/
+		// conf: Taks 4
 		else if (useCase.equals("cor_p")) {
 			System.out.println("cor_p Korrelationsanalyse auf Basis des Pairs-Algorithmus");	
 			conf.setJobName("Korrelationsanalyse");
@@ -482,13 +464,13 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			// Überschreiben des InputPaths um auch alle Subdirectories zu berücksichtigen
 			FileInputFormat.setInputPaths(conf, new Path(inputPath+"tags/*")); // setInputPaths = tags/*
 		}
-		/* default-option: Exit */
+		// default-option: Exit
 		else {
 			printUsage();
 			return 1;
 		}
   
-		/* Job starten */
+		// Job starten
 		JobClient.runJob(conf);
 		return 0;
 	}
@@ -503,8 +485,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	}
 	/* </Main> */
 	
-	/* 
-	* <Helper-Klassen>
+	/* <Helper-Klassen>
 	*/
 	private void printUsage() {
 		System.out.println("usage: [usecase] [input-path] [output-path]");
@@ -518,7 +499,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	}
 	
 	private void deleteOldOutput(String outputPath) throws IOException {
-		// Delete the output directory if it exists already
+		// Output Verzeichnis löschen, wenn bereits vorhanden
 		Path outputDir = new Path(outputPath);
 		FileSystem.get(getConf()).delete(outputDir, true);
 	}
