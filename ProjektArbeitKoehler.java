@@ -1,8 +1,6 @@
 package org.myorg;
 /*
  * 
- * 
- * 
  * TODO:
  * - Umgang mit Subdirectories; rekursives lesen v. Pfaden --> gelöst: * in Pfad einbauen
  * - Transformation: s/\n/s/g (ersetze Zeilenumbrüche durch Leerzeichen)
@@ -18,9 +16,11 @@ import org.apache.hadoop.fs.*;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.*;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
 import org.apache.hadoop.mapred.TextInputFormat;
+import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.util.*;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
@@ -28,18 +28,79 @@ import org.apache.hadoop.conf.Configured;
 
 
 public class ProjektArbeitKoehler extends Configured implements Tool {
-		
-	/* TODO: fix me */
-	 public class NonSplittableTextInputFormat extends TextInputFormat {
+	 /*
+	  *  <generics>
+	  */
+	public static class WholeFileInputFormat extends FileInputFormat<NullWritable, BytesWritable> {
+
 		@Override
-		protected boolean isSplitable(FileSystem fs, Path file) {
+		protected boolean isSplitable(FileSystem fs, Path filename) {
 			return false;
 		}
-		
-		public NonSplittableTextInputFormat () {
-			super();
+
+		@Override
+		public RecordReader<NullWritable, BytesWritable> getRecordReader(InputSplit split, JobConf job, Reporter reporter) throws IOException {
+			return new WholeFileRecordReader((FileSplit) split, job);	
 		}
 	}
+	public static class WholeFileRecordReader implements RecordReader<NullWritable, BytesWritable> {
+
+		private FileSplit fileSplit;
+		private Configuration conf;
+		private boolean processed = false;
+
+		public WholeFileRecordReader(FileSplit fileSplit, Configuration conf) throws IOException {
+			this.fileSplit = fileSplit;
+			this.conf = conf;
+		}
+
+		@Override
+		public NullWritable createKey() {
+			return NullWritable.get();
+		}
+
+		@Override
+		public BytesWritable createValue() {
+			return new BytesWritable();
+		}
+
+		@Override
+		public long getPos() throws IOException {
+			return processed ? fileSplit.getLength() : 0;
+		}
+
+		@Override
+		public float getProgress() throws IOException {
+			return processed ? 1.0f : 0.0f;
+		}
+
+		@Override
+		public boolean next(NullWritable key, BytesWritable value) throws IOException {
+			if (!processed) {
+				  byte[] contents = new byte[(int) fileSplit.getLength()];
+				  Path file = fileSplit.getPath();
+				  FileSystem fs = file.getFileSystem(conf);
+				  FSDataInputStream in = null;
+				  try {
+					in = fs.open(file);
+					IOUtils.readFully(in, contents, 0, contents.length);
+					value.set(contents, 0, contents.length);
+				  } finally {
+					IOUtils.closeStream(in);
+				  }
+				  processed = true;
+				  return true;
+			}
+			return false;
+		}
+
+		@Override
+		public void close() throws IOException {
+			// do nothing
+		}
+	}
+	  /* </generics>
+	 
 	 
 	/* 
 	 * <Task1>: 
@@ -70,23 +131,33 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	 
 	 /*
 	  * <Task2>
-	  * Kookkurrenz mit Pairs
+	  * Kookkurrenz mit Pairs (cc_p)
 	  */
-	public static class KookkurrenzMitPairsMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
+	public static class KookkurrenzMitPairsMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, IntWritable> {
 		private final Text pair = new Text();
 		private final IntWritable one = new IntWritable(1);
-		public void map(LongWritable key, Text line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
-			String text = line.toString();
+		public void map(NullWritable key, BytesWritable line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+			// Umwandeln der Bytes-Folge aus BytesWritable in einen String
+			String bytes2stringHelper = new String(line.getBytes()); 
 
-			String[] terms = text.split("\\s+");
+			String[] terms = bytes2stringHelper.split("\\r?\\n"); // Spliten bei CR oder LF
 			java.util.Arrays.sort(terms);
 
 			for (int i = 0; i < terms.length-1; i++) { // Iteration über jeden gefundenen Term
 				String term = terms[i];
+				term = term.trim(); // Abschneiden v. führenden od. nachfolgenden Leerzeichen
+						
+				if (term.length() ==0  | term.equals("")) // Überspringen von leeren Termen
+					continue;
+					
 				for (int j = i+1; j < terms.length; j++) {	
 					String term2 = terms[j];
-					boolean found = true;
+					term2 = term2.trim(); // Abschneiden v. führenden od. nachfolgenden Leerzeichen
 					
+					if (term2.length() == 0 | term2.equals("") ) // Überspringen von leeren Termen
+						continue;
+						
+					boolean found = true; 
 					int compare = term.compareTo(term2);  
 					if (compare < 0)  
 					{  
@@ -101,11 +172,11 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 						found = false;
 					}  
 					
-					if (found) { // we only add a new key entry if term & term2 are different
+					if (found) { // Nur eine Intermediate-K/V Pärchen erzeugen, wenn term & term2 unterschiedlich sind
 						output.collect(pair, one);
 					}
 				}
-			}
+			} 
 		}
 	}
 	public static class KookkurrenzMitPairsReduce extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
@@ -123,31 +194,31 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	  * <Task3>
 	  * Kookkurrenz mit Stripes
 	  */
-	public static class KookkurrenzMitStripesMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, MapWritable> {
+	public static class KookkurrenzMitStripesMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, MapWritable> {
 		private final Text key = new Text();
 		private final IntWritable one = new IntWritable(1);
 		private int window = 2;
 		
-		public void map(LongWritable key, Text line, OutputCollector<Text, MapWritable> output, Reporter reporter) throws IOException {
+		public void map(NullWritable key, BytesWritable line, OutputCollector<Text, MapWritable> output, Reporter reporter) throws IOException {
 			/* 
 			 * Notwendiges Format für Stripes-Algorithmus
 			 * term -> %hm{"Wort1"->1; "Wort2"->4, ...} */
-			
-			String text = line.toString();
+			 
+			String bytes2stringHelper = new String(line.getBytes()); // Umwandeln der Bytes-Folge aus BytesWritable in einen String
 			
 			// HashMap als Hilfe zum Aufsummieren d. Werte d. Kookkurrenzmatrix
 			HashMap<Text, IntWritable> hm = new HashMap<Text, IntWritable>();
 			
-			String[] terms = text.split("\\s+");
+			String[] terms = bytes2stringHelper.split("\\r?\\n"); // Spliten bei CR oder LF
 
 			for (int i = 0; i < terms.length; i++) { // Iteration über jeden gefundenen Term
-				Text term = new Text(terms[i]);  // Format term: Text 
+				Text term = new Text(terms[i].trim());  // Format term: Text 
 				
 				if (term.getLength() == 0) 
 					continue;
 															
 				for (int j = 0; j < terms.length; j++) {	// innere, geschachtelte Schleife über alle Terme
-					Text term2 = new Text(terms[j]);
+					Text term2 = new Text(terms[j].trim());
 									
 					if (i == j)  // Skip wenn Iteration an der selben Stelle steht, damit ein Termvorkommen nur einmal gezählt wird
 						continue;
@@ -210,34 +281,41 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 
 	/* <Task4>
 	 * Korrelationsanalyse mit Hilfe v. Pairs-Kookkurrenz-Algorithmus
+	 * 
+	 * Notwendiges Formate der Verzeichnisse
+	 * Startverzeichnis
+	 * - tags
+	 * -- <...> // INT
+	 * --- tags<...>.txt
+	 * - ht_descriptors/
+	 * - eh_descriptors/
 	 */
-	public static class KorrelationsAnalysePairsMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
+	public static class KorrelationsAnalysePairsMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, IntWritable> {
 		private final Text pair = new Text();
 		private final IntWritable one = new IntWritable(1);
-		private final String htPath = "input_task4/ht_descriptors/"; // TODO: wie bekommt man den pfad?
 		private int nGram = 3; // Definition v. n; Optimierung: Könnte über Kommandozeilenargumente abgefragt werden
-		public void map(LongWritable key, Text line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+		public void map(NullWritable key, BytesWritable line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
 			// für Zugriff den Feature-Vektor ist der Datei-Name der gerade durch den Mapper verarbeiteten Datei notwendig
 			FileSplit fileSplit = (FileSplit)reporter.getInputSplit();
 			String filePathParent = fileSplit.getPath().getParent().toString();	
 			String fileName = fileSplit.getPath().getName();	
-
+		
 			// auf Basis des Pfads der gerade verarbeiteten Datei die zugehörige Feature-Vektor Datei bestimmen
 			String[] pathComponents = filePathParent.split("/");
 			int pathInt = Integer.parseInt(pathComponents[pathComponents.length-1]);
+			String htPath = pathComponents[pathComponents.length-3]+"/ht_descriptors/";
 			String ehFile = "eh"+String.valueOf(pathInt)+".txt";
 			
 			// Zeilennummer aus Dateinamen extrahieren
-			// Pattern für Exif-Dateien
-			//Pattern p = Pattern.compile("tags("+String.valueOf(pathInt-1)+")(\\d+)\\.txt");
 			//Pattern für Tags
-			Pattern p = Pattern.compile("(tags)(\\d+)\\.txt");
+			Pattern p = Pattern.compile("tags("+String.valueOf(pathInt-1)+")(\\d+)\\.txt");
+
 			Matcher m = p.matcher(fileName);
 			int neededLineNumber = 0;
 			if (m.find()) {
 				neededLineNumber = Integer.parseInt(m.group(2));
 			}
-			
+
 			// Zugriff auf Datei mit Feature-Verktor mit dem Feature-Vektor
 			FileSystem fs = FileSystem.get(new Configuration());
 			FileStatus[] status = fs.listStatus(new Path(htPath+ehFile));
@@ -257,7 +335,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 							System.out.println("File not found");
 					}
 					
-				if (!featureVektor.equals("")) { // nur fortfahren, wenn anhand d. Zeilennummer ein Feature-Vektor gefunden werden konnte
+				if (featureVektor.length() != 0 | !featureVektor.equals("")) { // nur fortfahren, wenn anhand d. Zeilennummer ein Feature-Vektor gefunden werden konnte
 		
 					// Verarbeiten des Feature-Vektor					
 					String[] features = featureVektor.split("\\s+");
@@ -277,11 +355,14 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 					}
 					
 					// Verarbeitung der Tags sowie Kombination mit ermittelten nGramms
-					String lineIn = line.toString();
-					String[] tags = lineIn.split("\\s+");
+					
+					// Umwandeln der Bytes-Folge aus BytesWritable in einen String
+					String bytes2stringHelper = new String(line.getBytes()); 
+					String[] tags = bytes2stringHelper.split("\\r?\\n"); // Spliten bei CR oder LF
 										
 					for (int i = 0; i < tags.length-1; i++) { // Iteration über jedes gefundene Feature
 						String tag = tags[i];
+						tag = tag.trim();
 						Iterator itr = nGramms.iterator();
 						
 						while(itr.hasNext()) {
@@ -289,7 +370,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 						}
 					}
 				}
-			}
+			} 
 		}	
 		private static String quantify(String str) {
 			return Double.toString(Math.rint( Double.parseDouble(str) * 100 ) / 100 );
@@ -355,12 +436,14 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setOutputValueClass(Text.class);
 			conf.setOutputFormat(TextOutputFormat.class);
 			/* Input: Key.Text -> Value:Text */
-			conf.setInputFormat(TextInputFormat.class);
+			conf.setInputFormat(WholeFileInputFormat.class); // Kookkurrenz benötigt ein Eingabeformat in dem eine ganze Datei an den Mapper geht
+			conf.setMapOutputKeyClass(Text.class);
+			conf.setMapOutputValueClass(IntWritable.class);
 			/* Definition der entsprechenden Mapper/Reducer-Klassen */
 			conf.setMapperClass(KookkurrenzMitPairsMap.class);
 			conf.setCombinerClass(KookkurrenzMitPairsReduce.class);
 			conf.setReducerClass(KookkurrenzMitPairsReduce.class);
-			//conf.setInputFormat(NonSplittableTextInputFormat.class);
+			
 		}
 		/* conf: Task3 */
 		else if (useCase.equals("cc_s")) {
@@ -371,13 +454,12 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setOutputValueClass(Text.class);
 			conf.setOutputFormat(TextOutputFormat.class);
 			/* Input: Key.Text -> Value:Text */
-			conf.setInputFormat(TextInputFormat.class);
+			conf.setInputFormat(WholeFileInputFormat.class); // Kookkurrenz benötigt ein Eingabeformat in dem eine ganze Datei an den Mapper geht
 			/* Map-Output: Text -> MapWritable */
 			conf.setMapOutputKeyClass(Text.class);
 			conf.setMapOutputValueClass(MapWritable.class);
 			/* Definition der entsprechenden Mapper/Reducer-Klassen */
 			conf.setMapperClass(KookkurrenzMitStripesMap.class);
-			/* TODO: Erklären, wieso Stripes ohne Combiner funktioniert */
 			conf.setReducerClass(KookkurrenzMitStripesReduce.class);
 			//conf.setInputFormat(NonSplittableTextInputFormat.class);
 		}
@@ -390,7 +472,9 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setOutputValueClass(IntWritable.class);
 			conf.setOutputFormat(TextOutputFormat.class);
 			/* Input: Key.Text -> Value:Text */
-			conf.setInputFormat(TextInputFormat.class);
+			conf.setInputFormat(WholeFileInputFormat.class); // Korrelation benötigt ein Eingabeformat in dem eine ganze Datei an den Mapper geht
+			conf.setMapOutputKeyClass(Text.class);
+			conf.setMapOutputValueClass(IntWritable.class);
 			/* Definition der entsprechenden Mapper/Reducer-Klassen */
 			conf.setMapperClass(KorrelationsAnalysePairsMap.class);
 			conf.setCombinerClass(KorrelationsAnalysePairsReduce.class);
