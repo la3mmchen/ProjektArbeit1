@@ -197,12 +197,15 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			for (int i = 0; i < terms.length; i++) { // Iteration über jeden gefundenen Term
 				Text term = new Text(terms[i].trim());  // Format term: Text 
 				
-				if (term.getLength() == 0) 
+				if (term.getLength() == 0)  
 					continue;
 															
 				for (int j = 0; j < terms.length; j++) {	// innere, geschachtelte Schleife über alle Terme
 					Text term2 = new Text(terms[j].trim());
-									
+					
+					if(term2.getLength() == 0) 
+						continue;
+					
 					if (i == j)  // Skip wenn Iteration an der selben Stelle steht, damit ein Termvorkommen nur einmal gezählt wird
 						continue;
 						
