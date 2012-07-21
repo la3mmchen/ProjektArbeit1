@@ -117,14 +117,13 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	 /* <Task2>
 	  * Kookkurrenz mit Pairs (cc_p)
 	  */
-	public static class KookkurrenzMitPairsMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, IntWritable> {
+	public static class KookkurrenzMitPairsMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
 		private final Text pair = new Text();
 		private final IntWritable one = new IntWritable(1);
-		public void map(NullWritable key, BytesWritable line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
-			// Umwandeln der Bytes-Folge aus BytesWritable in einen String
-			String bytes2stringHelper = new String(line.getBytes()); 
+		public void map(LongWritable key, Text line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+			String text = line.toString();
 
-			String[] terms = bytes2stringHelper.split("\\r?\\n"); // Spliten bei CR oder LF
+			String[] terms = text.split("\\s+"); // Spliten bei Leerzeichen
 			java.util.Arrays.sort(terms);
 
 			for (int i = 0; i < terms.length-1; i++) { // Iteration über jeden gefundenen Term
@@ -177,22 +176,21 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	 /* <Task3>
 	  * Kookkurrenz mit Stripes (cc_s)
 	  */
-	public static class KookkurrenzMitStripesMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, MapWritable> {
+	public static class KookkurrenzMitStripesMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, MapWritable> {
 		private final Text key = new Text();
 		private final IntWritable one = new IntWritable(1);
 		private int window = 2;
 		
-		public void map(NullWritable key, BytesWritable line, OutputCollector<Text, MapWritable> output, Reporter reporter) throws IOException {
+		public void map(LongWritable key, Text line, OutputCollector<Text, MapWritable> output, Reporter reporter) throws IOException {
 			/* 
 			 * Notwendiges Format für Stripes-Algorithmus
 			 * term -> %hm{"Wort1"->1; "Wort2"->4, ...} */
-			 
-			String bytes2stringHelper = new String(line.getBytes()); // Umwandeln der Bytes-Folge aus BytesWritable in einen String
+			String text = line.toString();
+			String[] terms = text.split("\\s+"); // Spliten bei Leerzeichen			 
 			
 			// HashMap als Hilfe zum Aufsummieren d. Werte d. Kookkurrenzmatrix
 			HashMap<Text, IntWritable> hm = new HashMap<Text, IntWritable>();
-			
-			String[] terms = bytes2stringHelper.split("\\r?\\n"); // Spliten bei CR oder LF
+
 
 			for (int i = 0; i < terms.length; i++) { // Iteration über jeden gefundenen Term
 				Text term = new Text(terms[i].trim());  // Format term: Text 
@@ -421,7 +419,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setOutputValueClass(Text.class);
 			conf.setOutputFormat(TextOutputFormat.class);
 			/* Input: Key.Text -> Value:Text */
-			conf.setInputFormat(WholeFileInputFormat.class); // Kookkurrenz benötigt ein Eingabeformat in dem eine ganze Datei an den Mapper geht
+			conf.setInputFormat(TextInputFormat.class); 
 			conf.setMapOutputKeyClass(Text.class);
 			conf.setMapOutputValueClass(IntWritable.class);
 			/* Definition der entsprechenden Mapper/Reducer-Klassen */
@@ -439,7 +437,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			conf.setOutputValueClass(Text.class);
 			conf.setOutputFormat(TextOutputFormat.class);
 			/* Input: Key.Text -> Value:Text */
-			conf.setInputFormat(WholeFileInputFormat.class); // Kookkurrenz benötigt ein Eingabeformat in dem eine ganze Datei an den Mapper geht
+			conf.setInputFormat(TextInputFormat.class);
 			/* Map-Output: Text -> MapWritable */
 			conf.setMapOutputKeyClass(Text.class);
 			conf.setMapOutputValueClass(MapWritable.class);
