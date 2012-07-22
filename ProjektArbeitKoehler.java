@@ -371,6 +371,78 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	}
 	/*</Task4> */ 
 
+
+	/* <Task5>
+	 * Korrelationsanalyse Tags zu EXIF-Daten mit Hilfe v. Pairs-Kookkurrenz-Algorithmus (cor_exif)
+	 */
+	public static class KorrelationsAnalyseExifPairsMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, IntWritable> {
+		private final Text pair = new Text();
+		private final IntWritable one = new IntWritable(1);
+		private int nGram = 3; // Definition v. n; Optimierung: Könnte über Kommandozeilenargumente abgefragt werden
+		public void map(NullWritable key, BytesWritable line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+			// Umwandeln der Bytes-Folge aus BytesWritable in einen String
+			String bytes2stringHelper = new String(line.getBytes()); 
+			String[] exifParts = bytes2stringHelper.split("\\r?\\n"); // Spliten bei CR oder LF
+			List<String> exifs = new ArrayList<String>();
+			
+			for (int i = 0; i < exifParts.length; i++) { // Iteration über jedes gefundene Zeile
+						String actLine = exifParts[i];
+						actLine = actLine.trim();
+						if (actLine.equals(""))
+							continue;
+						if(actLine.substring(0,1).equals("-"))  {
+							if (i+1 < exifParts.length) {
+								String nextLine = exifParts[i+1];
+								if (!nextLine.equals("")) {
+										exifs.add(actLine+":"+nextLine);
+									}
+							}
+						}
+			}
+			
+			// Zur Kombination der Exif-Daten mit den Tags wird die Tag-Datei benötigt
+			FileSplit fileSplit = (FileSplit)reporter.getInputSplit();
+			String fileName = fileSplit.getPath().getName();	
+			String filePathParent = fileSplit.getPath().getParent().toString();
+			filePathParent = filePathParent+"/"+fileName;
+			filePathParent = filePathParent.replace("exif", "tags");
+			
+			List<String> tags = new ArrayList<String>();
+			FileSystem fs = FileSystem.get(new Configuration());
+			FileStatus[] status = fs.listStatus(new Path(filePathParent));
+			try {
+					String currentLine;
+					BufferedReader br=new BufferedReader(new InputStreamReader(fs.open(status[0].getPath())));
+					while((currentLine = br.readLine()) != null) {
+							tags.add(currentLine);
+					}
+			}
+			catch(Exception e){
+						System.out.println("File not found");
+				}
+
+					
+			for(int x=0; x<exifs.size();x++) {
+					String actExif = exifs.get(x);
+					for(int i=0; i<tags.size(); i++) {
+							String actTag = tags.get(i);
+							output.collect(new Text(actExif + " " + actTag), one);	
+					}				
+			}
+		}	
+	}
+	public static class KorrelationsAnalyseExifPairsReduce extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
+		public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+			int sum = 0;
+			while (values.hasNext()) {
+				sum += values.next().get();
+			}
+			if (sum >=10)
+				output.collect(key, new IntWritable(sum));
+		}
+	}
+	/*</Task5> */ 
+
 	/* <run>
 	 * 
 	 * @param args Kommandozeilenparameter; Syntax: (String)Anwendungsfalls (String)Input-Dir (String)Output-Dir
@@ -465,6 +537,24 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			// Überschreiben des InputPaths um auch alle Subdirectories zu berücksichtigen
 			FileInputFormat.setInputPaths(conf, new Path(inputPath+"tags/*")); // setInputPaths = tags/*
 		}
+		// conf: Task5
+		else if (useCase.equals("cor_exif")) {
+			System.out.println("cor_exif: Korrelationsanalye v. Exif-Daten und Tags auf Basis v. Pairs");	
+			conf.setJobName("Korrelationsanalyse");
+			/* Output: Key:Text -> Value:Integer */
+			conf.setOutputKeyClass(Text.class);
+			conf.setOutputValueClass(Text.class);
+			conf.setOutputFormat(TextOutputFormat.class);
+			/* Input: Key.Text -> Value:Text */
+			conf.setInputFormat(WholeFileInputFormat.class); 
+			conf.setMapOutputKeyClass(Text.class);
+			conf.setMapOutputValueClass(IntWritable.class);
+			/* Definition der entsprechenden Mapper/Reducer-Klassen */
+			conf.setMapperClass(KorrelationsAnalyseExifPairsMap.class);
+			conf.setCombinerClass(KorrelationsAnalyseExifPairsReduce.class);
+			conf.setReducerClass(KorrelationsAnalyseExifPairsReduce.class);
+			
+		}
 		// default-option: Exit
 		else {
 			printUsage();
@@ -495,7 +585,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 		System.out.println("     cc_p: Kookkurrenz mit Pairs-Algorithmus");
 		System.out.println("     cc_s: Kookkurrenz mit Stripes-Algorithmus");
 		System.out.println("     cor_p: Korrelationsanalye mit dem Pairs-Algorithmus");
-		System.out.println("     cor_s: Korrelationsanalye mit dem Stripes-Algorithmus");
+		System.out.println("     cor_exif: Korrelationsanalye v. Exif-Daten und Tags auf Basis v. Pairs");
 		return;
 	}
 	
