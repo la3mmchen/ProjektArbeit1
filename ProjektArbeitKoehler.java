@@ -437,7 +437,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			while (values.hasNext()) {
 				sum += values.next().get();
 			}
-			if (sum >=10)
+			if (sum >=3)
 				output.collect(key, new IntWritable(sum));
 		}
 	}
