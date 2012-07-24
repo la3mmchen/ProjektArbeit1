@@ -1,5 +1,4 @@
-
-Nutzung:
+Nutzung (auf Hadoop-Basis)
 	hadoop jar <erzeugtesJar> org.myorg.ProjektArbeitKoehler <useCase> <input> <output>
 
 	useCase:
