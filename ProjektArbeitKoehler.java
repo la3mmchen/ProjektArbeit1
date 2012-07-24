@@ -11,11 +11,15 @@ import org.apache.hadoop.io.*;
 import org.apache.hadoop.conf.*;
 import org.apache.hadoop.mapred.*;
 import org.apache.hadoop.util.*;
-
+/*
+ * Durchgeführte Implementierungsleistung im Rahmen der Projektarbeit "Software Bibliotheke für das Information Retrieval: Hadoop - eine Einführung und praktische Beispiele zur Anwedung" 
+ * von Alexander Köhler im Rahmen des VAWi-Studiums.
+ * 
+ */
 
 public class ProjektArbeitKoehler extends Configured implements Tool {
 	 /* <generics>
-	  * Diese Implementierung ist übernommen aus dem Buch: "Hadoop: The Definitive Guide" -> Siehe Literaturverzeichnis am Ende der Projektarbeit
+	  * Die Implementierung der Klasse WholeFileInputFormat und WholeFileRecordReader sind komplett übernommen aus dem Buch: "Hadoop: The Definitive Guide" -> Siehe Literaturverzeichnis am Ende der Projektarbeit
 	  */
 	public static class WholeFileInputFormat extends FileInputFormat<NullWritable, BytesWritable> {
 
@@ -89,33 +93,33 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	 
 	 
 	/* <Task1>: 
-	 *  WordCount (wc)
+	 *  WordCount (wc): Zählt Vorkommenshäufigkeiten in der gegebenen Kollektion
 	 * */
 	public static class WordCountMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
 	 private final static IntWritable one = new IntWritable(1);
 	  private Text word = new Text();
 	  public void map(LongWritable key, Text value, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
-		String line = value.toString();
-		StringTokenizer tokenizer = new StringTokenizer(line);
-		while (tokenizer.hasMoreTokens()) {
+		String line = value.toString(); // Umwandlung InputSplit von Text nach String
+		StringTokenizer tokenizer = new StringTokenizer(line); // Aufteilung anhand von Leerzeichen
+		while (tokenizer.hasMoreTokens()) { // Iteration über die einzelnen Bestandteile des InputSplits
 		  word.set(tokenizer.nextToken());
-		  output.collect(word, one);
+		  output.collect(word, one); // Erzeugen eines Eintrags im Zwischenergebnisses
 		}
 	  }
 	}
 	public static class WordCountReduce extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
 	  public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
-		int sum = 0;
+		int sum = 0; // Summe
 		while (values.hasNext()) {
-		  sum += values.next().get();
+		  sum += values.next().get(); // Aufsummierung der ermittelten Werte
 		}
-		output.collect(key, new IntWritable(sum));
+		output.collect(key, new IntWritable(sum)); // Schreiben des finalen Ergebnisses pro Term
 	  }
 	}
 	/* </Task1> */
 	 
 	 /* <Task2>
-	  * Kookkurrenz mit Pairs (cc_p)
+	  * Kookkurrenz mit Pairs (cc_p): Kookkurrenz-Analyse nach dem Pairs-Design-Pattern
 	  */
 	public static class KookkurrenzMitPairsMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, IntWritable> {
 		private final Text pair = new Text();
@@ -124,7 +128,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			String text = line.toString();
 
 			String[] terms = text.split("\\s+"); // Spliten bei Leerzeichen
-			java.util.Arrays.sort(terms);
+			java.util.Arrays.sort(terms); // Alphabetisches Sortieren der ermittelten Terme
 
 			for (int i = 0; i < terms.length-1; i++) { // Iteration über jeden gefundenen Term
 				String term = terms[i];
@@ -133,15 +137,15 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 				if (term.length() ==0  | term.equals("")) // Überspringen von leeren Termen
 					continue;
 					
-				for (int j = i+1; j < terms.length; j++) {	
+				for (int j = i+1; j < terms.length; j++) {	// Iteration über aller Nachfolger
 					String term2 = terms[j];
 					term2 = term2.trim(); // Abschneiden v. führenden od. nachfolgenden Leerzeichen
 					
 					if (term2.length() == 0 | term2.equals("") ) // Überspringen von leeren Termen
 						continue;
 						
-					boolean found = true; 
-					int compare = term.compareTo(term2);  
+					boolean found = true; // Schalter für ein neues gefundenes Pärchen
+					int compare = term.compareTo(term2); // Vergleich von Term mit Nachfolger  
 					if (compare < 0)  
 					{  
 						pair.set(term+", "+term2);
@@ -166,25 +170,23 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 		public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
 			int sum = 0;
 			while (values.hasNext()) {
-				sum += values.next().get();
+				sum += values.next().get(); // Aufsummierung der ermittelten Werte
 			}
-			output.collect(key, new IntWritable(sum));
+			output.collect(key, new IntWritable(sum)); // Schreiben des finalen Ergebnisses pro Term
 		}
 	}
 	/*</Task2> */
 
 	 /* <Task3>
-	  * Kookkurrenz mit Stripes (cc_s)
+	  * Kookkurrenz mit Stripes (cc_s): Kookkurrenz-Analyse nach dem Stripes-Design-Pattern
 	  */
 	public static class KookkurrenzMitStripesMap extends MapReduceBase implements Mapper<LongWritable, Text, Text, MapWritable> {
 		private final Text key = new Text();
 		private final IntWritable one = new IntWritable(1);
-		private int window = 2;
-		
+		/* 
+		 * Notwendiges Format für Stripes-Algorithmus
+		 * term -> %hm{"Wort1"->1; "Wort2"->4, ...} */
 		public void map(LongWritable key, Text line, OutputCollector<Text, MapWritable> output, Reporter reporter) throws IOException {
-			/* 
-			 * Notwendiges Format für Stripes-Algorithmus
-			 * term -> %hm{"Wort1"->1; "Wort2"->4, ...} */
 			String text = line.toString();
 			String[] terms = text.split("\\s+"); // Spliten bei Leerzeichen			 
 			
@@ -195,7 +197,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			for (int i = 0; i < terms.length; i++) { // Iteration über jeden gefundenen Term
 				Text term = new Text(terms[i].trim());  // Format term: Text 
 				
-				if (term.getLength() == 0)  
+				if (term.getLength() == 0)  // Überspringen von leeren Termen
 					continue;
 															
 				for (int j = 0; j < terms.length; j++) {	// innere, geschachtelte Schleife über alle Terme
@@ -204,7 +206,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 					if(term2.getLength() == 0) 
 						continue;
 					
-					if (i == j)  // Skip wenn Iteration an der selben Stelle steht, damit ein Termvorkommen nur einmal gezählt wird
+					if (i == j)  // Skip wenn Iteration an der selben Stelle steht:  ein Termvorkommen nur einmal zählen
 						continue;
 						
 					if (hm.containsKey(term2)) { // Prüfen: ist term2 bereits in %hm
@@ -222,16 +224,14 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 				WritableHm.putAll(hm);
 				hm.clear(); // Leeren der Hilfs-HashMap
 				stripe.put(term, WritableHm); // schreibe term-> %hm in MapWritable
-				// Schreibe der Zeile d. Kookkurrenzmatrix in OutputCollector
-				output.collect(term,stripe);
+				output.collect(term,stripe); // Schreibe der Zeile d. Kookkurrenzmatrix in OutputCollector
 			}
 		}
 	}	  
 	public static class KookkurrenzMitStripesReduce extends MapReduceBase implements Reducer<Text, MapWritable, Text, Text> {
 		public void reduce(Text key, Iterator<MapWritable> values, OutputCollector<Text, Text> output, Reporter reporter) throws IOException {
 			int sum = 0;
-			// HashMap zum zählen erstellen
-			HashMap<Text, Integer> hm = new HashMap<Text, Integer>();
+			HashMap<Text, Integer> hm = new HashMap<Text, Integer>(); // HashMap zum zählen erstellen
 		
 			while (values.hasNext()) { // Iteration über Key->Value Input d. Reducer's
 					MapWritable outterMapWritable = values.next();
@@ -248,17 +248,13 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 								else {
 										hm.put(value, 1);
 								}
-								// TODO: delete me after Beschreibung Reducer 
-								//tmpText.set(tmpText + "; "+innerElement+"->"+ innerMapWritable.get(innerElement));
-								//ergibt: 
+								// Datenformat an dieser Stelle: 
 								// 		ipsum	; dolor->1; lorem->1; amet->1; lorem->1
 								// 		lorem	; amet->1; ipsum->1; dolor->1; ipsum->1
 						}
 					}
 			}
-			output.collect(key, new Text(hm.toString()));
-			//output.collect(key, new Text("lala"));
-			
+			output.collect(key, new Text(hm.toString()));			
 		}
 	}	
 	/*</Task3> */
@@ -269,7 +265,7 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	 * Notwendiges Formate der Verzeichnisse
 	 * Startverzeichnis
 	 * - tags
-	 * -- <...> // INT
+	 * -- <...> // Zahlenwert
 	 * --- tags<...>.txt
 	 * - ht_descriptors/
 	 * - eh_descriptors/
@@ -277,7 +273,10 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 	public static class KorrelationsAnalysePairsMap extends MapReduceBase implements Mapper<NullWritable, BytesWritable, Text, IntWritable> {
 		private final Text pair = new Text();
 		private final IntWritable one = new IntWritable(1);
-		private int nGram = 3; // Definition v. n; Optimierung: Könnte über Kommandozeilenargumente abgefragt werden
+		private final String analysePath = "ht_descriptors"; // zu analysiereder Feature-Vektor
+		private final String analyseFilePrefix = "ht"; // Prefix für Datei --> muss inhaltlich mit analysePath zusammen passen
+		private final String kollektion = "tags";
+		private int nGram = 3; // Definition der nGram-Breite; Optimierung: Könnte über Kommandozeilenargumente abgefragt werden
 		public void map(NullWritable key, BytesWritable line, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
 			// für Zugriff den Feature-Vektor ist der Datei-Name der gerade durch den Mapper verarbeiteten Datei notwendig
 			FileSplit fileSplit = (FileSplit)reporter.getInputSplit();
@@ -287,12 +286,12 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			// auf Basis des Pfads der gerade verarbeiteten Datei die zugehörige Feature-Vektor Datei bestimmen
 			String[] pathComponents = filePathParent.split("/");
 			int pathInt = Integer.parseInt(pathComponents[pathComponents.length-1]);
-			String htPath = pathComponents[pathComponents.length-3]+"/ht_descriptors/";
-			String ehFile = "eh"+String.valueOf(pathInt)+".txt";
+			String htPath = pathComponents[pathComponents.length-3]+"/"+analysePath+"/";
+			String ehFile = analyseFilePrefix+String.valueOf(pathInt)+".txt";
 			
 			// Zeilennummer aus Dateinamen extrahieren
-			//Pattern für Tags
-			Pattern p = Pattern.compile("tags("+String.valueOf(pathInt-1)+")(\\d+)\\.txt");
+			// Pattern 
+			Pattern p = Pattern.compile(kollektion+"("+String.valueOf(pathInt-1)+")(\\d+)\\.txt");
 
 			Matcher m = p.matcher(fileName);
 			int neededLineNumber = 0;
@@ -364,9 +363,9 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 		public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
 			int sum = 0;
 			while (values.hasNext()) {
-				sum += values.next().get();
+				sum += values.next().get(); // Aufsummierung der ermittelten Werte
 			}
-			output.collect(key, new IntWritable(sum));
+			output.collect(key, new IntWritable(sum)); // Schreiben des finalen Ergebnisses pro Term
 		}
 	}
 	/*</Task4> */ 

@@ -1,0 +1,10 @@
+
+Nutzung:
+	hadoop jar <erzeugtesJar> org.myorg.ProjektArbeitKoehler <useCase> <input> <output>
+
+	useCase:
+			wc: WordCount
+			cc_p: Kookkurrenz mit Pairs-Algorithmus
+			cc_s: Kookkurrenz mit Stripes-Algorithmus
+			cor_p: Korrelationsanalye mit dem Pairs-Algorithmus");
+			cor_exif: Korrelationsanalye v. Exif-Daten und Tags auf Basis v. Pairs
