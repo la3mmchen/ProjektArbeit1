@@ -113,7 +113,8 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 		while (values.hasNext()) {
 		  sum += values.next().get(); // Aufsummierung der ermittelten Werte
 		}
-		output.collect(key, new IntWritable(sum)); // Schreiben des finalen Ergebnisses pro Term
+		if (sum >=3)
+			output.collect(key, new IntWritable(sum)); // Schreiben des finalen Ergebnisses pro Term
 	  }
 	}
 	/* </Task1> */
@@ -172,7 +173,8 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 			while (values.hasNext()) {
 				sum += values.next().get(); // Aufsummierung der ermittelten Werte
 			}
-			output.collect(key, new IntWritable(sum)); // Schreiben des finalen Ergebnisses pro Term
+			if (sum >=3)
+				output.collect(key, new IntWritable(sum)); // Schreiben des finalen Ergebnisses pro Term
 		}
 	}
 	/*</Task2> */
