@@ -593,5 +593,5 @@ public class ProjektArbeitKoehler extends Configured implements Tool {
 		Path outputDir = new Path(outputPath);
 		FileSystem.get(getConf()).delete(outputDir, true);
 	}
-	/* </Helper-Klassen>	*/
+	/* </Helper-Klassen>*/
 }
